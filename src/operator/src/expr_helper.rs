@@ -48,6 +48,7 @@ use datatypes::schema::{
     SkippingIndexType,
 };
 use file_engine::FileOptions;
+use relational_engine::source::{fetch_columns, ConnectionInfo};
 use query::sql::{
     check_file_to_table_schema_compatibility, file_column_schemas_to_table,
     infer_file_table_schema, prepare_file_table_files,
@@ -73,7 +74,10 @@ use sql::statements::{
 };
 use sql::util::extract_tables_from_query;
 use store_api::mito_engine_options::{COMPACTION_OVERRIDE, COMPACTION_TYPE};
-use table::requests::{FILE_TABLE_META_KEY, TableOptions};
+use table::requests::{
+    FILE_TABLE_META_KEY, RELATIONAL_CONNECTION_KEY, RELATIONAL_META_KEY, RELATIONAL_REMOTE_TABLE_KEY,
+    TableOptions,
+};
 use table::table_reference::TableReference;
 #[cfg(feature = "enterprise")]
 pub use trigger::to_create_trigger_task_expr;
@@ -1191,6 +1195,77 @@ fn sanitize_flow_name(mut flow_name: ObjectName) -> Result<String> {
     );
     // safety: we've checked flow_name.0 has exactly one element.
     Ok(flow_name.0.swap_remove(0).to_string_unquoted())
+}
+
+/// Builds a [`CreateTableExpr`] for `CREATE EXTERNAL TABLE ... ENGINE=relational`
+/// by connecting to the remote database, reading the remote table's columns and
+/// freezing them (plus the connection info) into the create-table request.
+pub(crate) async fn create_relational_external_expr(
+    create: CreateExternalTable,
+    query_ctx: &QueryContextRef,
+) -> Result<CreateTableExpr> {
+    let (catalog_name, schema_name, table_name) =
+        table_idents_to_full_name(&create.name, query_ctx)
+            .map_err(BoxedError::new)
+            .context(ExternalSnafu)?;
+
+    let mut table_options = create.options.into_map();
+
+    let connection = table_options
+        .get(RELATIONAL_CONNECTION_KEY)
+        .cloned()
+        .context(InvalidSqlSnafu {
+            err_msg: "missing `connection` option for relational external table",
+        })?;
+    let remote_table = table_options
+        .get(RELATIONAL_REMOTE_TABLE_KEY)
+        .cloned()
+        .context(InvalidSqlSnafu {
+            err_msg: "missing `remote_table` option for relational external table",
+        })?;
+
+    let connection = ConnectionInfo::parse(&connection)
+        .map_err(BoxedError::new)
+        .context(ExternalSnafu)?;
+    let remote_columns = fetch_columns(&connection, &remote_table)
+        .await
+        .map_err(BoxedError::new)
+        .context(ExternalSnafu)?;
+
+    // External tables have no primary key and no natural time column; the file
+    // engine helper appends a synthetic `greptime_timestamp` TIME INDEX.
+    let remote_schemas = remote_columns
+        .into_iter()
+        .map(|c| ColumnSchema::new(c.name, c.data_type, true))
+        .collect::<Vec<_>>();
+    let (table_column_schemas, time_index) = file_column_schemas_to_table(&remote_schemas);
+    let primary_keys: Vec<String> = vec![];
+    let column_defs = column_schemas_to_defs(table_column_schemas, &primary_keys)?;
+
+    // Freeze the connection + remote table into a single meta option so the
+    // query path can reconnect without re-deriving them from scattered options.
+    let meta = serde_json::json!({
+        "connection": connection.raw,
+        "remote_table": remote_table,
+    });
+    table_options.insert(
+        RELATIONAL_META_KEY.to_string(),
+        serde_json::to_string(&meta).context(EncodeJsonSnafu)?,
+    );
+
+    Ok(CreateTableExpr {
+        catalog_name,
+        schema_name,
+        table_name,
+        desc: String::default(),
+        column_defs,
+        time_index,
+        primary_keys,
+        create_if_not_exists: create.if_not_exists,
+        table_options,
+        table_id: None,
+        engine: create.engine.clone(),
+    })
 }
 
 #[cfg(test)]

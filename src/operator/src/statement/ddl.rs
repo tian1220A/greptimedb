@@ -32,8 +32,8 @@ use catalog::CatalogManagerRef;
 use chrono::Utc;
 use common_base::regex_pattern::NAME_PATTERN_REG;
 use common_catalog::consts::{
-    DEFAULT_CATALOG_NAME, DEFAULT_SCHEMA_NAME, is_ddl_reserved_table, is_readonly_schema,
-    is_readonly_table,
+    DEFAULT_CATALOG_NAME, DEFAULT_SCHEMA_NAME, RELATIONAL_ENGINE, is_ddl_reserved_table,
+    is_readonly_schema, is_readonly_table,
 };
 use common_catalog::{format_full_flow_name, format_full_table_name};
 use common_error::ext::BoxedError;
@@ -518,9 +518,12 @@ impl StatementExecutor {
         create_expr: CreateExternalTable,
         ctx: QueryContextRef,
     ) -> Result<TableRef> {
-        let create_expr =
+        let create_expr = if create_expr.engine == RELATIONAL_ENGINE {
+            &mut expr_helper::create_relational_external_expr(create_expr, &ctx).await?
+        } else {
             &mut expr_helper::create_external_expr(create_expr, &ctx, &self.local_file_access)
-                .await?;
+                .await?
+        };
         self.create_table_inner(create_expr, None, ctx, TriggerReason::Manual)
             .await
     }

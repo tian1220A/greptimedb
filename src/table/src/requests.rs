@@ -62,6 +62,7 @@ pub const FILE_TABLE_FORMAT_KEY: &str = "format";
 // (`mysql://…` / `postgresql://…`), `remote_table` the remote table name.
 pub const RELATIONAL_CONNECTION_KEY: &str = "connection";
 pub const RELATIONAL_REMOTE_TABLE_KEY: &str = "remote_table";
+pub const RELATIONAL_META_KEY: &str = "__private.relational_meta";
 
 pub const TABLE_DATA_MODEL: &str = "table_data_model";
 pub const TABLE_DATA_MODEL_TRACE_V1: &str = "greptime_trace_v1";
@@ -81,7 +82,7 @@ pub fn is_trace_table(table_info: &crate::metadata::TableInfo) -> bool {
 pub const OTLP_METRIC_COMPAT_KEY: &str = "otlp_metric_compat";
 pub const OTLP_METRIC_COMPAT_PROM: &str = "prom";
 
-pub const VALID_TABLE_OPTION_KEYS: [&str; 15] = [
+pub const VALID_TABLE_OPTION_KEYS: [&str; 17] = [
     // common keys:
     WRITE_BUFFER_SIZE_KEY,
     TTL_KEY,
@@ -93,6 +94,9 @@ pub const VALID_TABLE_OPTION_KEYS: [&str; 15] = [
     FILE_TABLE_LOCATION_KEY,
     FILE_TABLE_FORMAT_KEY,
     FILE_TABLE_PATTERN_KEY,
+    // relational (external table) engine keys:
+    RELATIONAL_CONNECTION_KEY,
+    RELATIONAL_REMOTE_TABLE_KEY,
     // metric engine keys:
     PHYSICAL_TABLE_METADATA_KEY,
     LOGICAL_TABLE_METADATA_KEY,

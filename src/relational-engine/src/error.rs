@@ -14,7 +14,7 @@
 
 use std::any::Any;
 
-use common_error::ext::{ErrorExt, RetryHint};
+use common_error::ext::{BoxedError, ErrorExt, RetryHint};
 use common_error::status_code::StatusCode;
 use common_macro::stack_trace_debug;
 use object_store::error::retry_hint_from_opendal_error;
@@ -112,6 +112,38 @@ pub enum Error {
         #[snafu(implicit)]
         location: Location,
     },
+
+    #[snafu(display("Invalid connection string `{connection}`: {message}"))]
+    InvalidConnection {
+        connection: String,
+        message: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Failed to connect to remote database"))]
+    ConnectRemote {
+        #[snafu(source)]
+        source: BoxedError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Failed to read remote table metadata"))]
+    FetchMetadata {
+        #[snafu(source)]
+        source: BoxedError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Remote table not found: {}", table))]
+    RemoteTableNotFound {
+        table: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -121,18 +153,27 @@ impl ErrorExt for Error {
         use Error::*;
 
         match self {
-            Unsupported { .. } | InvalidMetadata { .. } => StatusCode::InvalidArguments,
+            Unsupported { .. }
+            | InvalidMetadata { .. }
+            | InvalidConnection { .. } => StatusCode::InvalidArguments,
 
             RegionNotFound { .. } => StatusCode::RegionNotFound,
+
+            RemoteTableNotFound { .. } => StatusCode::TableNotFound,
+
+            ConnectRemote { .. } | FetchMetadata { .. } => {
+                StatusCode::StorageUnavailable
+            }
 
             CheckObject { .. }
             | StoreRegionManifest { .. }
             | LoadRegionManifest { .. }
             | DeleteRegionManifest { .. } => StatusCode::StorageUnavailable,
 
-            EncodeJson { .. } | DecodeJson { .. } | ManifestExists { .. } | UnexpectedEngine { .. } => {
-                StatusCode::Unexpected
-            }
+            EncodeJson { .. }
+            | DecodeJson { .. }
+            | ManifestExists { .. }
+            | UnexpectedEngine { .. } => StatusCode::Unexpected,
         }
     }
 

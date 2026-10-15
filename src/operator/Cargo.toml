@@ -71,6 +71,7 @@ percent-encoding.workspace = true
 prometheus.workspace = true
 prost-types = { workspace = true, optional = true }
 query.workspace = true
+relational-engine.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
