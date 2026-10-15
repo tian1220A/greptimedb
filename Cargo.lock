@@ -4522,6 +4522,7 @@ dependencies = [
  "prometheus 0.14.0",
  "prost 0.14.1",
  "query",
+ "relational-engine",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -12332,6 +12333,39 @@ checksum = "2057b2325e68a893284d1538021ab90279adac1139957ca2a74426c6f118fb48"
 dependencies = [
  "hashbrown 0.16.1",
  "memchr",
+]
+
+[[package]]
+name = "relational-engine"
+version = "1.3.0-alpha.1"
+dependencies = [
+ "api",
+ "async-trait",
+ "chrono",
+ "common-base",
+ "common-catalog",
+ "common-decimal",
+ "common-error",
+ "common-macro",
+ "common-recordbatch",
+ "common-telemetry",
+ "common-test-util",
+ "common-time",
+ "datafusion-common",
+ "datafusion-expr",
+ "datatypes",
+ "futures",
+ "jsonb",
+ "mysql_async",
+ "object-store",
+ "serde",
+ "serde_json",
+ "snafu 0.8.6",
+ "store-api",
+ "table",
+ "tokio",
+ "tokio-postgres",
+ "url",
 ]
 
 [[package]]

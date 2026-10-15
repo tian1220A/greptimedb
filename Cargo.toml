@@ -45,6 +45,7 @@ members = [
     "src/datanode",
     "src/datatypes",
     "src/file-engine",
+    "src/relational-engine",
     "src/flow",
     "src/frontend",
     "src/index",
@@ -262,6 +263,7 @@ strum = { version = "0.27", features = ["derive"] }
 sysinfo = "0.33"
 temp-env = "0.3"
 tempfile = "3"
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls"] }
 tokio = { version = "1.47", features = ["full"] }
 tokio-postgres = "0.7.18"
 tokio-rustls = { version = "0.26.2", default-features = false }
@@ -333,6 +335,7 @@ common-workload = { path = "src/common/workload" }
 datanode = { path = "src/datanode" }
 datatypes = { path = "src/datatypes" }
 file-engine = { path = "src/file-engine" }
+relational-engine = { path = "src/relational-engine" }
 flow = { path = "src/flow" }
 frontend = { path = "src/frontend", default-features = false }
 index = { path = "src/index" }
