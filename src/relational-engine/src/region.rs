@@ -12,21 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use common_recordbatch::SendableRecordBatchStream;
 use object_store::ObjectStore;
+use snafu::ResultExt;
+use store_api::data_source::DataSourceRef;
 use store_api::metadata::RegionMetadataRef;
 use store_api::path_utils::region_name;
 use store_api::region_request::{RegionCreateRequest, RegionOpenRequest};
-use store_api::storage::RegionId;
+use store_api::storage::{RegionId, ScanRequest};
+use table::requests::{RELATIONAL_CONNECTION_KEY, RELATIONAL_REMOTE_TABLE_KEY};
 
-use crate::error::Result;
+use crate::error::{MissingRequiredFieldSnafu, QueryRemoteSnafu, Result, UnsupportedSnafu};
 use crate::manifest::RelationalRegionManifest;
+use crate::source::{ConnectionInfo, MySqlSource, SqlDialectKind};
 
-#[derive(Debug)]
 pub struct RelationalRegion {
     pub(crate) region_dir: String,
     pub(crate) metadata: RegionMetadataRef,
+    data_source: DataSourceRef,
+}
+
+impl std::fmt::Debug for RelationalRegion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RelationalRegion")
+            .field("region_dir", &self.region_dir)
+            .field("metadata", &self.metadata)
+            .finish_non_exhaustive()
+    }
 }
 
 pub type RelationalRegionRef = Arc<RelationalRegion>;
@@ -49,12 +64,14 @@ impl RelationalRegion {
             &region_name(region_id.table_id(), region_id.region_sequence()),
         );
         let metadata = manifest.metadata()?;
+        let data_source = build_data_source(&metadata, &manifest.options)?;
 
         manifest.store(&region_dir, object_store).await?;
 
         Ok(Arc::new(Self {
             region_dir,
             metadata,
+            data_source,
         }))
     }
 
@@ -68,10 +85,13 @@ impl RelationalRegion {
             &region_name(region_id.table_id(), region_id.region_sequence()),
         );
         let manifest = RelationalRegionManifest::load(region_id, &region_dir, object_store).await?;
+        let metadata = manifest.metadata()?;
+        let data_source = build_data_source(&metadata, &manifest.options)?;
 
         Ok(Arc::new(Self {
             region_dir,
-            metadata: manifest.metadata()?,
+            metadata,
+            data_source,
         }))
     }
 
@@ -82,6 +102,63 @@ impl RelationalRegion {
 
     pub fn metadata(&self) -> RegionMetadataRef {
         self.metadata.clone()
+    }
+
+    /// Scans the remote table, returning a stream of record batches. The
+    /// underlying data source defers the actual connection + streaming work to a
+    /// spawned task, so this is synchronous.
+    pub fn query(&self, request: ScanRequest) -> Result<SendableRecordBatchStream> {
+        self.data_source.get_stream(request).context(QueryRemoteSnafu)
+    }
+}
+
+/// Builds the data source for a region from its frozen manifest options.
+fn build_data_source(
+    metadata: &RegionMetadataRef,
+    options: &HashMap<String, String>,
+) -> Result<DataSourceRef> {
+    let connection = options.get(RELATIONAL_CONNECTION_KEY).ok_or_else(|| {
+        MissingRequiredFieldSnafu {
+            name: RELATIONAL_CONNECTION_KEY,
+        }
+        .build()
+    })?;
+    let remote_table = options
+        .get(RELATIONAL_REMOTE_TABLE_KEY)
+        .ok_or_else(|| {
+            MissingRequiredFieldSnafu {
+                name: RELATIONAL_REMOTE_TABLE_KEY,
+            }
+            .build()
+        })?;
+
+    let connection = ConnectionInfo::parse(connection)?;
+
+    match connection.kind {
+        SqlDialectKind::MySql => {
+            let time_index_pos = metadata.time_index_column_pos();
+            // The frozen schema is the remote columns followed by the synthetic
+            // `greptime_timestamp` column; drop the latter from the remote list.
+            let mut remote_columns = Vec::with_capacity(metadata.column_metadatas.len() - 1);
+            for (index, column) in metadata.column_metadatas.iter().enumerate() {
+                if index == time_index_pos {
+                    continue;
+                }
+                remote_columns.push(column.column_schema.name.clone());
+            }
+            let source = MySqlSource::new(
+                connection,
+                remote_table.clone(),
+                metadata.schema.clone(),
+                remote_columns,
+                time_index_pos,
+            );
+            Ok(Arc::new(source))
+        }
+        SqlDialectKind::Postgres => UnsupportedSnafu {
+            operation: "PostgreSQL data source (planned in a later commit)",
+        }
+        .fail(),
     }
 }
 

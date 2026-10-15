@@ -30,7 +30,7 @@ use crate::error::Result;
 
 pub use connection::{split_remote_table, ConnectionInfo, RelationalColumn};
 pub use dialect::{MySqlDialect, PostgresDialect, SqlDialect, SqlDialectKind};
-pub use mysql::{map_type as map_mysql_type, MySqlColumnType};
+pub use mysql::{map_type as map_mysql_type, MySqlColumnType, MySqlSource};
 pub use param::SqlParam;
 pub use postgres::{map_type as map_postgres_type, PostgresColumnType};
 pub use query_rep::QueryRep;

@@ -144,6 +144,28 @@ pub enum Error {
         location: Location,
     },
 
+    #[snafu(display("Failed to query remote table"))]
+    QueryRemote {
+        #[snafu(source)]
+        source: BoxedError,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Failed to convert value for column `{}`: {}", column, reason))]
+    ConvertValue {
+        column: String,
+        reason: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
+
+    #[snafu(display("Missing required field `{}`", name))]
+    MissingRequiredField {
+        name: String,
+        #[snafu(implicit)]
+        location: Location,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -155,15 +177,18 @@ impl ErrorExt for Error {
         match self {
             Unsupported { .. }
             | InvalidMetadata { .. }
-            | InvalidConnection { .. } => StatusCode::InvalidArguments,
+            | InvalidConnection { .. }
+            | MissingRequiredField { .. } => StatusCode::InvalidArguments,
 
             RegionNotFound { .. } => StatusCode::RegionNotFound,
 
             RemoteTableNotFound { .. } => StatusCode::TableNotFound,
 
-            ConnectRemote { .. } | FetchMetadata { .. } => {
+            ConnectRemote { .. } | FetchMetadata { .. } | QueryRemote { .. } => {
                 StatusCode::StorageUnavailable
             }
+
+            ConvertValue { .. } => StatusCode::Internal,
 
             CheckObject { .. }
             | StoreRegionManifest { .. }
